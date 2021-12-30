@@ -3,7 +3,9 @@ import pandas as pd
 import os
 import re
 import numpy as np
-import sys 
+import sys
+from datetime import datetime
+import locale
 
 import plotly.express as px
 
@@ -41,11 +43,13 @@ def cat_df(df):
                             'Indefinido',df.Categoria)
 
 def clean_main(full_path):
+    print('Cleaning TD expenses file ' + full_path)
     df = pd.read_csv(full_path, sep=";",skiprows=8,dtype={'Fecha': str} ,decimal=',')
     #Fecha
     df.loc[:,'Fecha'] = pd.to_datetime(df.Fecha.str.strip(),format='%d%m%Y', dayfirst=True)
     df.loc[:,'Mes'] = df.Fecha.dt.strftime('%b%Y')
     df = df.fillna(0)
+    df.Descripcion = df.Descripcion.str.strip()
 
     cat_df(df)
 
@@ -53,28 +57,30 @@ def clean_main(full_path):
 
 def build_report(df):
     try:
-        sys.argv[1]
+        mes = sys.argv[1]
     except:
-        raise ValueError('You need to specify a month like Dec2021 as an argument')
+        raise TypeError("missing 1 required argument: 'mes'. You need to specify a month like Dec2021 as an argument")
 
-    analyzed_df = df[df.Mes == sys.argv[1]]
-    fig = px.histogram(analyzed_df, y='Mes', x='Cargos',color="Categoria",
-                barmode='stack'
-                )
-    fig.update_layout(
-        yaxis = dict(autorange="reversed")
-    )
+    analyzed_df = df[(df.Mes == mes) & (df.Categoria != 'Tarjeta Credito')]    
+    total_cat = pd.DataFrame(analyzed_df[['Categoria','Cargos']].groupby('Categoria').sum()).reset_index()    
+
+    fig =px.bar(analyzed_df, x='Categoria', y='Cargos', hover_name="Descripcion", color='Categoria', title='Gastos para ' + mes + '. (Total: ' + "${:,.0f}".format(int(total_cat.Cargos.sum())) + ')')
+
+    for i, t in total_cat.iterrows():        
+        fig.add_annotation(x=t.Categoria ,y=t.Cargos+10000 ,text="${:,.0f}".format(t.Cargos),showarrow=False)
+        
     fig.show()
-
+    '''
     analyzed_df[['Mes','Cargos','Categoria']].groupby(['Mes','Categoria']).max()
 
     col = ['Fecha','Descripcion','Categoria']
     analyzed_df[col + ['Cargos']].nlargest(5,'Cargos')
     analyzed_df[col + ['Abonos']].nlargest(5,'Abonos')
-
+    '''
 
 #### TC File
 def clean_files(dir):
+    print('Creating consolidate TC expenses file with the following files: \n')
     df = pd.DataFrame()
     files = []
     for file in os.listdir(dir):
@@ -84,16 +90,25 @@ def clean_files(dir):
         #Remove unnecesary rows and columns
         df_tc = df_tc[(df_tc['Fecha\nOperación'].notna())]
         df_tc = df_tc.dropna(axis=1, how='all') #drop all empty columns
-        df_tc.columns = ['Lugar', 'Fecha', 'Codigo Referencia',
+        df_tc.columns = ['Lugar', 'FechaOperacion', 'Codigo Referencia',
             'Descripcion', 'Monto Operacion',
-            'Monto Total', 'N Cuota', 'Valor Cuota']
+            'Monto Total', 'N Cuota', 'Cargos']
         df_tc = df_tc[(df_tc['N Cuota'] != 'Cargo del Mes') & (df_tc['Descripcion'].str.strip() != 'PAGO')]
         df_tc = df_tc[~df_tc['Descripcion'].str.strip().str.startswith('TOTAL')].reset_index(drop=True)
 
         cat_df(df_tc)
-
+        
         #Fix column information - String columns cleansing
-        df_tc.loc[:,'Fecha'] = pd.to_datetime(df_tc.Fecha.str.strip(),format='%d/%m/%Y', dayfirst=True)
+        df_tc.loc[:,'FechaOperacion'] = pd.to_datetime(df_tc.FechaOperacion.str.strip(),format='%d/%m/%Y', dayfirst=True)
+                
+        locale.setlocale(locale.LC_ALL, ('Spanish_Chile', '1252'))
+        file_words = file.split('-')
+        df_tc.loc[:,'Fecha'] = datetime.strptime(file_words[4] + '-' + file_words[5].split('.')[0], '%B-%Y').strftime('%Y-%m-%d')
+        df_tc.loc[:,'Fecha'] = pd.to_datetime(df_tc.Fecha.str.strip(),format='%Y-%m-%d')        
+        locale.setlocale(locale.LC_ALL, 'en_US')
+        df_tc.loc[:,'Mes'] = df_tc.Fecha.dt.strftime('%b%Y')
+        locale.setlocale(locale.LC_ALL, ('Spanish_Chile', '1252'))
+
         df_tc.loc[:,'Lugar'] = df_tc.loc[:,'Lugar'].str.strip()
         df_tc.loc[:,'Lugar'] = df_tc.Lugar.str.replace('VILLA ALEMA','VILLA ALEMANA')
         df_tc.loc[:,'Descripcion'] = df_tc.apply(lambda x: x['Descripcion'][:x['Descripcion'].find('TASA')], axis=1).str.strip()
@@ -118,7 +133,10 @@ def main():
     
     df = clean_main(os.path.join(directory,file))
     df_tc = clean_files(os.path.join(directory,'EECC'))
-    build_report(df)
+    df_tc.loc[:,'TC'] = 1
+    full_df = df[['Fecha', 'Descripcion', 'Cargos', 'Abonos', 'Mes', 'Categoria']].append(df_tc[['Fecha', 'Descripcion', 'Cargos', 'Mes', 'Categoria','TC']]).fillna(0).reset_index(drop=True)
+    
+    build_report(full_df)
 
 if __name__ == '__main__':
     main()
