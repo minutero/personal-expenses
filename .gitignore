@@ -1,0 +1,6 @@
+*.xlsx
+*.xls
+*.dat
+*.pdf
+
+.tmp.driveupload/
