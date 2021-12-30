@@ -3,17 +3,9 @@ import pandas as pd
 import os
 import re
 import numpy as np
+import sys 
 
 import plotly.express as px
-
-directory = r'C:\Users\felip\Documents\Gastos'
-file = 'ScotiaFS2021.dat'
-
-df = pd.read_csv(os.path.join(directory,file), sep=";",skiprows=8,dtype={'Fecha': str} ,decimal=',')
-#Fecha
-df.loc[:,'Fecha'] = pd.to_datetime(df.Fecha.str.strip(),format='%d%m%Y', dayfirst=True)
-df.loc[:,'Mes'] = df.Fecha.dt.strftime('%b%Y')
-df = df.fillna(0)
 
 #Categoria
 def cat_df(df):
@@ -48,30 +40,37 @@ def cat_df(df):
     df.loc[:,'Categoria'] = np.where(df.Categoria == '' ,
                             'Indefinido',df.Categoria)
 
-cat_df(df)
+def clean_main(full_path):
+    df = pd.read_csv(full_path, sep=";",skiprows=8,dtype={'Fecha': str} ,decimal=',')
+    #Fecha
+    df.loc[:,'Fecha'] = pd.to_datetime(df.Fecha.str.strip(),format='%d%m%Y', dayfirst=True)
+    df.loc[:,'Mes'] = df.Fecha.dt.strftime('%b%Y')
+    df = df.fillna(0)
 
-'''
-g = df[df.Cargos > 0].groupby('Categoria')['Descripcion'].apply(lambda x: list(np.unique(x)))
-g['Cuentas']
-df[(df.Categoria == 'Transferencia') & (df.Cargos > 0) & ~(df.Descripcion.str.contains('15504340-7'))].groupby('Mes').sum()
+    cat_df(df)
 
-df[(df.Descripcion.str.contains('16261568-8')) & (df.Cargos > 0)]
-'''
+    return df
 
-analyzed_df = df[df.Mes == 'Dec2021']
-fig = px.histogram(analyzed_df, y='Mes', x='Cargos',color="Categoria",
-             barmode='stack'
-            )
-fig.update_layout(
-    yaxis = dict(autorange="reversed")
-)
-fig.show()
+def build_report(df):
+    try:
+        sys.argv[1]
+    except:
+        raise ValueError('You need to specify a month like Dec2021 as an argument')
 
-analyzed_df[['Mes','Cargos','Categoria']].groupby(['Mes','Categoria']).max()
+    analyzed_df = df[df.Mes == sys.argv[1]]
+    fig = px.histogram(analyzed_df, y='Mes', x='Cargos',color="Categoria",
+                barmode='stack'
+                )
+    fig.update_layout(
+        yaxis = dict(autorange="reversed")
+    )
+    fig.show()
 
-col = ['Fecha','Descripcion','Categoria']
-analyzed_df[col + ['Cargos']].nlargest(5,'Cargos')
-analyzed_df[col + ['Abonos']].nlargest(5,'Abonos')
+    analyzed_df[['Mes','Cargos','Categoria']].groupby(['Mes','Categoria']).max()
+
+    col = ['Fecha','Descripcion','Categoria']
+    analyzed_df[col + ['Cargos']].nlargest(5,'Cargos')
+    analyzed_df[col + ['Abonos']].nlargest(5,'Abonos')
 
 
 #### TC File
@@ -108,11 +107,18 @@ def clean_files(dir):
     df = df.sort_values('Fecha').reset_index(drop=True)
     return df
 
-df_tc = clean_files(os.path.join(directory,'EECC'))
+def main():
+    if len(sys.argv) < 3:
+        directory = r'C:\Users\felip\Documents\Gastos'
+        file = 'ScotiaFS2021.dat'
+    else:
+        path = os.path.split(sys.argv[2])
+        directory = path[0]
+        file = path[1]
+    
+    df = clean_main(os.path.join(directory,file))
+    df_tc = clean_files(os.path.join(directory,'EECC'))
+    build_report(df)
 
-df_tc.groupby('Categoria').sum()
-df_tc[col + ['Valor Cuota']].nlargest(5,'Valor Cuota')
-df_tc.sort_values('Categoria')
-
-df_tc[df_tc.Categoria == 'Indefinido']
-
+if __name__ == '__main__':
+    main()
