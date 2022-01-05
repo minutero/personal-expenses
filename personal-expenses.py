@@ -30,7 +30,7 @@ def cat_df(df):
                             'Efectivo',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('SODIMAC|PLACACENTRO|CONSTRU-MART|LIMARGALA|HOMECENTER|EASY|IMPERIAL|ENKO|CASA MUSA|CONSTRUMART|MK'),
                             'Construccion',df.Categoria)
-    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('76810627-4|76989370-9|5335679-6|8671486-8'),
+    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('76810627-4|76989370-9'),
                             'Inversion',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('CEMIN|SALCOBRAND|FARM|DR SIMI|AHUM|ISAPRE'),
                             'Salud',df.Categoria)
@@ -39,9 +39,9 @@ def cat_df(df):
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('77288155-K|JUEGO DE LETRAS|GATO ARCANO|MODELPRO|76554187-5|76795499-9|AMAZON|CAFE Y TABLEROS'),
                             'Juegos',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('MUNDO TRANSFER|NUSKIN') ,
-                            'Arigato',df.Categoria)
-    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('76574150-5') ,
-                            'Trabajo',df.Categoria)
+                            'Arigato',df.Categoria)    
+    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('5335679-6|8671486-8') ,
+                            'Excluir',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Categoria == '' ,
                             'Indefinido',df.Categoria)
 
@@ -102,13 +102,13 @@ def clean_tc_files(dir, mes):
     df = df.sort_values('Fecha').reset_index(drop=True)
     return df
 
-def build_month_report(df, mes , tc):
+def build_month_report(df, mes):
     locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
-    analyzed_df = df[(df.Mes.str.lower() == mes.lower()) & (df.Categoria != 'Tarjeta Credito') & (df.TC.isin(tc))]
-    analyzed_df.loc[:,'TC'] = analyzed_df.TC.apply(np.int64).astype(str)
-    total_cat = pd.DataFrame(analyzed_df[['Categoria','Cargos']].groupby('Categoria').sum()).reset_index()
+    df = df[(df.Mes.str.lower() == mes.lower())]
+    df.loc[:,'TC'] = df.TC.apply(np.int64).astype(str)
+    total_cat = pd.DataFrame(df[['Categoria','Cargos']].groupby('Categoria').sum()).reset_index()
     
-    fig =px.bar(analyzed_df, x='Categoria', y='Cargos',
+    fig =px.bar(df, x='Categoria', y='Cargos',
             hover_name="Descripcion",            
             color='TC',
             title='Gastos para ' + datetime.strptime(mes, '%b%Y').strftime('%B %Y') + ' (Total: ' + "${:,.0f}".format(int(total_cat.Cargos.sum())) + ')',
@@ -125,7 +125,6 @@ def build_month_report(df, mes , tc):
                                             'Transporte',
                                             'Efectivo',
                                             'Salud',
-                                            'Trabajo',
                                             'Arigato',
                                             'Indefinido'
                                             ]}
@@ -155,9 +154,10 @@ def build_month_report(df, mes , tc):
     analyzed_df[col + ['Cargos']][~analyzed_df.Descripcion.str.contains('16332063-0|16261568-8')].nlargest(5,'Cargos')
     analyzed_df[col + ['Abonos']].nlargest(5,'Abonos')
     '''
-def build_hist_report(df,tc):    
-    analyzed_df = df[(df.Categoria != 'Tarjeta Credito') & (df.TC.isin(tc))].groupby(['Categoria','Mes']).sum().reset_index()
+def build_hist_report(df, mes):    
+    analyzed_df = df.groupby(['Categoria','Mes']).sum().reset_index()
     means_df = analyzed_df.groupby('Categoria').mean().reset_index()
+    last_df = analyzed_df[analyzed_df.Mes.str.lower() == mes.lower()].reset_index()
     cat_order = ["Cuentas",
                 "Supermercado",
                 "Transferencia",
@@ -170,13 +170,13 @@ def build_hist_report(df,tc):
                 'Transporte',
                 'Efectivo',
                 'Salud',
-                'Trabajo',
                 'Arigato',
                 'Indefinido',
-                'SUMUP'
+                'SUMUP',
+                'Excluir'
                 ]
-    means_df['Categoria'] = pd.Categorical(means_df['Categoria'], cat_order)
-    means_df.sort_values('Categoria', inplace=True)
+    means_df.loc[:,'Categoria'] = pd.Categorical(means_df['Categoria'], cat_order)
+    means_df = means_df.sort_values('Categoria',ascending=False).reset_index(drop=True)
 
     fig = px.area(analyzed_df,x='Mes',  y='Cargos',
                 facet_col='Categoria',
@@ -185,15 +185,14 @@ def build_hist_report(df,tc):
                 category_orders={"Categoria": cat_order})
 
     for i, j in means_df.iterrows():
-        print(1,j.Categoria,int(i/4) +1,4 if (i+1)%4 == 0 else (i+1)%4, j.Cargos)
         fig.add_hline(y=j.Cargos, line_dash="dot",
-                col=4 if (i+1)%4 == 0 else (i+1)%4, 
+                col=(3-i)%4+1, 
                 row= int(i/4) +1,
                 annotation_text="${:,.0f}".format(int(j.Cargos)),
                 annotation_position="top right")
 
-    #fig.update_xaxes(title='')
-    #fig.update_yaxes(title='')
+    fig.update_xaxes(title='',showticklabels=False)
+    fig.update_yaxes(title='')
     #fig.update_layout(title_font_size = 25)
     fig.show()
 
@@ -217,13 +216,15 @@ def main():
     directory = os.path.split(path)[0]
     td_file = os.path.split(path)[1]
 
-    df = clean_td_file(path)
+    df_td = clean_td_file(path)
     df_tc = clean_tc_files(os.path.join(directory,'EECC'), mes)
     df_tc.loc[:,'TC'] = 1
-    full_df = df[['Fecha', 'Descripcion', 'Cargos', 'Abonos', 'Mes', 'Categoria']].append(df_tc[['Fecha', 'Descripcion', 'Cargos', 'Mes', 'Categoria','TC']]).fillna(0).reset_index(drop=True)
+    df = df_td[['Fecha', 'Descripcion', 'Cargos', 'Abonos', 'Mes', 'Categoria']].append(df_tc[['Fecha', 'Descripcion', 'Cargos', 'Mes', 'Categoria','TC']]).fillna(0).reset_index(drop=True)
     
-    build_month_report(full_df, mes, tc)
-    build_hist_report(full_df, tc)
+    analyzed_df = df[(df.Categoria != 'Tarjeta Credito') & (df.TC.isin(tc))]
+    
+    build_month_report(analyzed_df, mes)
+    build_hist_report(analyzed_df)
     
 if __name__ == '__main__':
     main()
