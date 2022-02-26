@@ -5,3 +5,7 @@
 *.Identifier
 
 .tmp.driveupload/
+/__pycache__/
+/examples/
+/Debito/
+/Credito/
