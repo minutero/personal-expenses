@@ -3,9 +3,12 @@
 *.dat
 *.pdf
 *.Identifier
+*.csv
 
 .tmp.driveupload/
 /__pycache__/
 /examples/
 /Debito/
 /Credito/
+/.vscode/
+/datapreparation-personal-expenses/

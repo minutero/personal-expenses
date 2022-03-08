@@ -7,6 +7,8 @@ from datetime import datetime
 import locale
 
 import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 #Categoria
 def cat_df(df):
@@ -30,11 +32,11 @@ def cat_df(df):
                             'Efectivo',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('SODIMAC|PLACACENTRO|CONSTRU-MART|LIMARGALA|HOMECENTER|EASY|IMPERIAL|ENKO|CASA MUSA|CONSTRUMART|MK'),
                             'Construccion',df.Categoria)
-    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('76810627-4|76989370-9'),
+    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('76810627-4|76989370-9|DIVISAS'),
                             'Inversion',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('CEMIN|SALCOBRAND|FARM|DR SIMI|AHUM|ISAPRE'),
                             'Salud',df.Categoria)
-    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('PARIS|RIPLEY|CASAIDEAS|MERCADO PAGO|EL CONTAINER|CENCOSUD|O 2 SPORT|DAFITI|FPAY|LINIO|FALABELL|MERCADOPAGO'),
+    df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('PARIS|RIPLEY|CASAIDEAS|MERCADO PAGO|EL CONTAINER|CENCOSUD|O 2 SPORT|DAFITI|FPAY|LINIO|FALABELL|MERCADOPAGO|SHESAN'),
                             'Casa Comercial',df.Categoria)
     df.loc[:,'Categoria'] = np.where(df.Descripcion.str.contains('77288155-K|JUEGO DE LETRAS|GATO ARCANO|MODELPRO|76554187-5|76795499-9|AMAZON|CAFE Y TABLEROS'),
                             'Juegos',df.Categoria)
@@ -45,29 +47,33 @@ def cat_df(df):
     df.loc[:,'Categoria'] = np.where(df.Categoria == '' ,
                             'Indefinido',df.Categoria)
 
-def clean_td_file(full_path):
-    df = pd.read_csv(full_path, sep=";",skiprows=8,dtype={'Fecha': str} ,decimal=',')
-    #Fecha
-    locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
-    df.loc[:,'Fecha'] = pd.to_datetime(df.Fecha.str.strip(),format='%d%m%Y', dayfirst=True)
-    df.loc[:,'Mes'] = df.Fecha.dt.strftime('%b%Y')
-    df = df.fillna(0)
-    df.Descripcion = df.Descripcion.str.strip()
+def clean_td_file(dir):    
+    df = pd.DataFrame()
+    for file in os.listdir(dir):
+        df_td = pd.read_csv(os.path.join(dir,file), sep=";",skiprows=8,dtype={'Fecha': str} ,decimal=',')
 
-    cat_df(df)
+        #Fecha
+        locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
+        df_td.loc[:,'Fecha'] = pd.to_datetime(df_td.Fecha.str.strip(),format='%d%m%Y', dayfirst=True)
+        df_td.loc[:,'Mes'] = df_td.Fecha.dt.strftime('%b%Y')
+        df_td = df_td.fillna(0)
+        df_td.Descripcion = df_td.Descripcion.str.strip()
 
+        dates_in_file = df_td['Fecha'].dt.strftime('%b%Y').unique()        
+
+        cat_df(df_td)
+
+        df = df.append(df_td)
+        
     return df
 
 #### TC File
-def clean_tc_files(dir, mes):
-    global tc_file
+def clean_tc_files(dir):
     df = pd.DataFrame()    
     locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
     for file in os.listdir(dir):
         file_words = file.split('-')
-        file_dt = datetime.strptime(file_words[4] + file_words[5].split('.')[0], '%B%Y')
-        if datetime.strptime(mes, '%b%Y') == file_dt:
-            tc_file = file
+        file_dt = datetime.strptime(file_words[4] + file_words[5].split('.')[0], '%B%Y')        
 
         df_tc = pd.read_excel(os.path.join(dir,file),skiprows=49)
 
@@ -102,17 +108,18 @@ def clean_tc_files(dir, mes):
     df = df.sort_values('Fecha').reset_index(drop=True)
     return df
 
-def build_month_report(df, mes):
+def build_month_report(df, mes, colors={'background': '#ffffff','text':'#000000','chart1': '#000000','chart2': '#ffcc66'}):
     locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
     df = df[(df.Mes.str.lower() == mes.lower())]
     df.loc[:,'TC'] = df.TC.apply(np.int64).astype(str)
+    df.loc[:,'Fecha'] = df.Fecha.dt.strftime('%A %-d')
     total_cat = pd.DataFrame(df[['Categoria','Cargos']].groupby('Categoria').sum()).reset_index()
     
     fig =px.bar(df, x='Categoria', y='Cargos',
-            hover_name="Descripcion",            
-            color='TC',
-            title='Gastos para ' + datetime.strptime(mes, '%b%Y').strftime('%B %Y') + ' (Total: ' + "${:,.0f}".format(int(total_cat.Cargos.sum())) + ')',
-            color_discrete_map={"0": 'indianred',"1":'darksalmon'},
+            hover_name="Descripcion",  
+            hover_data=['Fecha'],          
+            color='TC',            
+            color_discrete_map={"0": colors['chart1'],"1":colors['chart2']},
             category_orders={"Categoria": ["Cuentas",
                                             "Supermercado",
                                             "Transferencia",
@@ -129,24 +136,26 @@ def build_month_report(df, mes):
                                             'Indefinido'
                                             ]}
             )
-    fig.update_xaxes(title='')
-    fig.update_yaxes(title='Monto')
+    fig.update_xaxes(title='', showgrid=False)
+    fig.update_yaxes(title='', showgrid=False, showticklabels=False)
     fig.update_layout(title_font_size = 25)
-
+    fig.update_layout({'plot_bgcolor': colors['background'],
+                    'paper_bgcolor': colors['background'],
+                    })
+    fig.update_layout(font_color=colors['text'],
+                    title_font_color=colors['text'],
+                    legend_title_font_color=colors['text']
+                )    
     for i, t in total_cat.iterrows():        
-        fig.add_annotation(x=t.Categoria ,y=t.Cargos+10000 ,text="${:,.0f}".format(t.Cargos),showarrow=False)
+        fig.add_annotation(x=t.Categoria ,
+                            y=t.Cargos+10000 ,
+                            text="${:,.0f}".format(t.Cargos),
+                            showarrow=False,
+                            font=dict(color=colors['text']))
     
-    note = 'Este reporte se construyo con ' + td_file + ' y ' + tc_file
-    fig.add_annotation(
-        showarrow=False,
-        text=note,
-        font=dict(size=10), 
-        xref='x domain',
-        x=0.5,
-        yref='y domain',
-        y=-0.1
-        )
-    fig.show()
+    
+    
+    return fig
     '''
     analyzed_df[['Mes','Cargos','Categoria']].groupby(['Mes','Categoria']).max()
 
@@ -154,11 +163,29 @@ def build_month_report(df, mes):
     analyzed_df[col + ['Cargos']][~analyzed_df.Descripcion.str.contains('16332063-0|16261568-8')].nlargest(5,'Cargos')
     analyzed_df[col + ['Abonos']].nlargest(5,'Abonos')
     '''
-def build_hist_report(df, mes):    
-    analyzed_df = df.groupby(['Categoria','Mes']).sum().reset_index()
-    means_df = analyzed_df.groupby('Categoria').mean().reset_index()
-    last_df = analyzed_df[analyzed_df.Mes.str.lower() == mes.lower()].reset_index()
-    cat_order = ["Cuentas",
+def build_hist_report(df, categories, colors={'background': '#ffffff','text':'#000000','chart1': '#000000','chart2': '#ffcc66'}):    
+    filtered_df = df[df['Categoria'].isin(categories)].groupby(['Categoria','Mes']).sum().reset_index()
+    month_order = ['ene',
+        'feb',
+        'mar',
+        'abr',
+        'may',
+        'jun',
+        'jul',
+        'ago',
+        'sep',
+        'oct',
+        'nov',
+        'dic'
+    ]
+    years_in_data = sorted(set([y[-4:] for y in filtered_df['Mes'].unique()]))
+    date_order = [month + year for year in years_in_data for month in month_order]
+    filtered_df.loc[:,'Mes'] = pd.Categorical(filtered_df['Mes'], date_order)
+    filtered_df.sort_values(['Categoria','Mes'], inplace=True)
+
+    means_df = filtered_df.groupby('Categoria').mean().reset_index()
+    
+    full_cat_order = ["Cuentas",
                 "Supermercado",
                 "Transferencia",
                 "Construccion",
@@ -175,56 +202,108 @@ def build_hist_report(df, mes):
                 'SUMUP',
                 'Excluir'
                 ]
+    cat_order = [x for x in categories if x in full_cat_order]
     means_df.loc[:,'Categoria'] = pd.Categorical(means_df['Categoria'], cat_order)
     means_df = means_df.sort_values('Categoria',ascending=False).reset_index(drop=True)
+    
+    fig = make_subplots(len(categories), 1)
+    for i,cat in enumerate(categories):
+        category_df = filtered_df[filtered_df['Categoria']==cat]
+        fig.add_trace(go.Scatter(x=category_df['Mes'],
+                                y=category_df['Cargos'],
+                                fill='tozeroy',
+                                fillcolor=colors['chart1'],
+                                line=dict(color=colors['chart2'],width=0.5),
+                                #marker=dict(color=colors['chart2']),
+                                name=cat), 
+                        i+1, 
+                        1)
+        cargo_cat = means_df[means_df['Categoria']==cat]['Cargos'].iloc[0]
+        fig.add_shape(
+                type= 'line',
+                xref= 'paper', x0= 0, x1= 1,
+                yref= 'y'+str(i+1), y0= cargo_cat, y1= cargo_cat,
+                line=dict(
+                    color=colors['text'],
+                    width=3,
+                    dash="dot",
+                )
+                )
+        fig.add_annotation(x=1, y=cargo_cat,
+                text="${:,.0f}".format(int(cargo_cat)),
+                showarrow=False,
+                yref= 'y'+str(i+1),
+                xref='paper',                
+                yshift=10,
+                font=dict(color=colors['text'])
+                )
+    fig.update_layout(hovermode="x")
+    fig.update_xaxes(title='', showgrid=False, showticklabels=False)
+    fig.update_yaxes(title='', showgrid=False, showticklabels=False)
 
-    fig = px.area(analyzed_df,x='Mes',  y='Cargos',
-                facet_col='Categoria',
-                facet_col_wrap=4,
-                color='Categoria',
-                category_orders={"Categoria": cat_order})
+    fig.update_layout({'plot_bgcolor': colors['background'],
+                    'paper_bgcolor': colors['background'],
+                    })
+    fig.update_layout(font_color=colors['text'],
+                    title_font_color=colors['text'],
+                    legend_title_font_color=colors['text']
+                )
+    
+    return fig
 
-    for i, j in means_df.iterrows():
-        fig.add_hline(y=j.Cargos, line_dash="dot",
-                col=(3-i)%4+1, 
-                row= int(i/4) +1,
-                annotation_text="${:,.0f}".format(int(j.Cargos)),
-                annotation_position="top right")
+def draw_hist_plot(tc,path):
 
-    fig.update_xaxes(title='',showticklabels=False)
-    fig.update_yaxes(title='')
-    #fig.update_layout(title_font_size = 25)
-    fig.show()
+    df_td = clean_td_file(os.path.join(path,'Debito'))
+    df_tc = clean_tc_files(os.path.join(path,'Credito'))
+    df_tc.loc[:,'TC'] = 1
+    df = df_td[['Fecha', 'Descripcion', 'Cargos', 'Abonos', 'Mes', 'Categoria']].append(df_tc[['Fecha', 'Descripcion', 'Cargos', 'Mes', 'Categoria','TC']]).fillna(0).reset_index(drop=True)
+    
+    analyzed_df = df[(df.Categoria != 'Tarjeta Credito') & (df.TC.isin(tc))]
+    hist_fig = build_hist_report(analyzed_df)
 
-def main():
+    return hist_fig
+
+def draw_month_plot(tc, path):    
     try:
-        mes = sys.argv[1]
+        mes = sys.argv[2]
     except:        
         raise TypeError("No se especifico 1 argumento requerido: 'mes'. Ej: Dic2021")
-
-    try:
-        tc = list(range(int(sys.argv[2])+1))
-    except:
-        tc = list(range(2))
-
-    if len(sys.argv) < 4:
-        path = os.path.join(sys.path[0],'ScotiaFS2021.dat')        
-    else:
-        path = sys.argv[3]
     
-    global td_file
-    directory = os.path.split(path)[0]
-    td_file = os.path.split(path)[1]
-
-    df_td = clean_td_file(path)
-    df_tc = clean_tc_files(os.path.join(directory,'EECC'), mes)
+    df_td = clean_td_file(os.path.join(path,'Debito'),mes)
+    df_tc = clean_tc_files(os.path.join(path,'Credito'),mes)
     df_tc.loc[:,'TC'] = 1
     df = df_td[['Fecha', 'Descripcion', 'Cargos', 'Abonos', 'Mes', 'Categoria']].append(df_tc[['Fecha', 'Descripcion', 'Cargos', 'Mes', 'Categoria','TC']]).fillna(0).reset_index(drop=True)
     
     analyzed_df = df[(df.Categoria != 'Tarjeta Credito') & (df.TC.isin(tc))]
     
-    build_month_report(analyzed_df, mes)
-    build_hist_report(analyzed_df)
+    month_fig = build_month_report(analyzed_df, mes)
+
+    return month_fig
+
+def main():    
+    try:
+        plot_type = sys.argv[1]
+    except:        
+        raise TypeError("No se especifico 1 argumento requerido: 'tipo de grafico'. Opciones validas: hist, mes")
+
+    try:
+        tc = list(range(int(sys.argv[3])+1))
+    except:
+        tc = list(range(2))
+
+    if len(sys.argv) < 5:
+        path = os.path.dirname(os.path.abspath(__file__))
+    else:
+        path = sys.argv[4]
     
+    if plot_type=='hist':
+        fig_toshow = draw_hist_plot(tc, path)
+    elif plot_type=='mes':
+        fig_toshow = draw_month_plot(tc, path)
+    else:
+        raise TypeError("No se especifico 'tipo de grafico' valido. Opciones validas: hist, mes")
+
+    fig_toshow.show()
+
 if __name__ == '__main__':
     main()
