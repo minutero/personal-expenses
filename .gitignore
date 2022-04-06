@@ -4,6 +4,7 @@
 *.pdf
 *.Identifier
 *.csv
+*test*
 
 .tmp.driveupload/
 /__pycache__/
