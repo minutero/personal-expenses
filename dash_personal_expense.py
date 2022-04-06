@@ -1,10 +1,16 @@
 import personal_expenses as pe
 import s3_data as s3
 from dash import Dash, dcc, html, Input, Output
+import dash_auth
 import os
 from datetime import datetime, date
 
 app = Dash(__name__)
+
+auth = dash_auth.BasicAuth(
+    app,
+    VALID_USERNAME_PASSWORD_PAIRS
+)
 
 path = os.path.dirname(os.path.abspath(__file__))
 tc = list(range(2))
